@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; manifest-src 'self'; connect-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0B6B70" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0E1A1D" media="(prefers-color-scheme: dark)">
+<title>Carnet</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="css/app.css">
+<script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+<div class="page" id="lock">
+  <header>
+    <h1 id="lock-title">Carnet</h1>
+    <p class="sub" id="lock-sub">Chargement…</p>
+  </header>
+  <form class="lock-form" id="lock-form" hidden>
+    <label for="pass1" id="pass1-label">Phrase secrète</label>
+    <input type="password" id="pass1" autocomplete="current-password" autocapitalize="off" spellcheck="false">
+    <div id="pass2-wrap" hidden>
+      <label for="pass2">Confirme la phrase</label>
+      <input type="password" id="pass2" autocomplete="new-password" autocapitalize="off" spellcheck="false">
+    </div>
+    <label class="check" id="show-wrap"><input type="checkbox" id="show-pass"> Afficher la phrase</label>
+    <button type="submit" class="primary" id="lock-submit">Déverrouiller</button>
+    <p class="status" id="lock-status" aria-live="polite"></p>
+  </form>
+  <div class="code-screen" id="code-screen" hidden>
+    <p class="code" id="code-value"></p>
+    <button type="button" class="ghost" id="code-copy">Copier le code</button>
+    <label class="check"><input type="checkbox" id="code-noted"> Je l'ai noté en lieu sûr</label>
+    <button type="button" class="primary" id="code-continue" disabled>Continuer</button>
+  </div>
+  <p class="notice" id="store-notice" hidden>Le stockage n'est pas disponible dans cette fenêtre : le carnet ne sera pas conservé après fermeture.</p>
+  <div class="forgot" id="forgot" hidden>
+    <button type="button" class="link" id="alt-link">Phrase oubliée ?</button>
+    <button type="button" class="link" id="restore-open">Restaurer une sauvegarde</button>
+    <div class="forgot" id="wipe-wrap" hidden>
+      <button type="button" class="link" id="wipe-open">Ni phrase ni code ?</button>
+      <div class="danger" id="wipe-panel" hidden>
+        <p>Sans la phrase ni le code de secours, le carnet est illisible. La seule issue est d'effacer toutes les saisies de cet appareil et de repartir de zéro, ou de restaurer une sauvegarde dont tu connais la phrase.</p>
+        <div class="row">
+          <button type="button" class="danger-btn" id="wipe">Effacer définitivement</button>
+          <button type="button" class="ghost" id="wipe-cancel">Annuler</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="danger" id="restore-panel" hidden>
+    <p id="restore-text">Choisis un fichier de sauvegarde du carnet. Il remplacera ce qui se trouve sur cet appareil, puis tu l'ouvriras avec la phrase secrète ou le code de secours de cette sauvegarde.</p>
+    <input type="file" id="restore-file" accept=".json,application/json">
+    <p class="status" id="restore-status" aria-live="polite"></p>
+    <div class="row">
+      <button type="button" class="danger-btn" id="restore-confirm" disabled>Remplacer par cette sauvegarde</button>
+      <button type="button" class="ghost" id="restore-cancel">Annuler</button>
+    </div>
+  </div>
+  <noscript><p class="notice">Le carnet a besoin de JavaScript pour fonctionner.</p></noscript>
+</div>
+
+<div id="app" hidden>
+<div class="page">
+  <header>
+    <div class="topline">
+      <button type="button" class="ghost small" id="settings-open">Réglages</button>
+      <button type="button" class="ghost small" id="lock-now">Verrouiller</button>
+    </div>
+    <h1 id="today-title">Carnet</h1>
+    <nav class="tabs" aria-label="Sections du carnet">
+      <button type="button" id="tab-matin">Matin</button>
+      <button type="button" id="tab-blessures">Blessures</button>
+      <button type="button" id="tab-traitements">Traitements</button>
+      <button type="button" id="tab-suivi">Suivi</button>
+    </nav>
+  </header>
+
+  <div class="view" id="view-matin">
+    <p class="notice" id="backup-nudge" hidden></p>
+    <section aria-labelledby="h-score">
+      <h2 id="h-score"><span id="main-name">Suivi quotidien</span> <small>10 = le pire</small></h2>
+      <div class="score-card">
+        <div class="readout" id="readout" aria-live="polite">
+          <span class="num" id="score-num">–</span>
+          <span class="word empty" id="score-word">Touche une note de 1 à 10</span>
+        </div>
+        <div class="scale" id="scale" role="group" aria-label="Note de 1 à 10"></div>
+        <div class="scale-ends"><span>Aucun symptôme</span><span>Poussée sévère</span></div>
+      </div>
+    </section>
+
+    <section aria-labelledby="h-today-trt" id="today-trt-section" hidden>
+      <h2 id="h-today-trt">Traitements du jour <small>enregistré dès que tu coches</small></h2>
+      <div class="takes" id="today-trt"></div>
+    </section>
+
+    <section aria-labelledby="h-zones">
+      <h2 id="h-zones">Zones touchées <small>optionnel</small></h2>
+      <div class="chips" data-multi id="zones"></div>
+    </section>
+
+    <section aria-labelledby="h-sleep">
+      <h2 id="h-sleep">Sommeil de la nuit <small>optionnel</small></h2>
+      <div class="chips" id="sleep"></div>
+      <div class="chips" data-multi id="sleep-extra"></div>
+    </section>
+
+    <section aria-labelledby="h-trig">
+      <h2 id="h-trig">Déclencheur suspecté <small>optionnel</small></h2>
+      <div class="chips" data-multi id="triggers"></div>
+      <form class="add-row" id="trig-form">
+        <input type="text" id="trig-new" maxlength="30" placeholder="Nouvelle étiquette" aria-label="Nouvelle étiquette de déclencheur">
+        <button type="submit">Ajouter</button>
+      </form>
+    </section>
+
+    <div class="view" id="checks"></div>
+
+    <section aria-labelledby="h-note">
+      <h2 id="h-note">Commentaire <small>optionnel</small></h2>
+      <textarea id="note" aria-labelledby="h-note" maxlength="1000" placeholder="Ex. : changement de routine hier soir"></textarea>
+    </section>
+
+    <section aria-labelledby="h-week">
+      <h2 id="h-week">Les 7 derniers jours <small>10 = le pire</small></h2>
+      <div class="week" id="week"></div>
+    </section>
+  </div>
+
+  <div class="view" id="view-blessures" hidden>
+    <button type="button" class="ghost wide" id="inj-new-open">Nouvelle blessure</button>
+    <div id="inj-new"></div>
+    <div class="list" id="injuries-list"></div>
+  </div>
+
+  <div class="view" id="view-traitements" hidden>
+    <button type="button" class="ghost wide" id="trt-new-open">Nouveau traitement</button>
+    <div id="trt-new"></div>
+    <div class="list" id="treatments-list"></div>
+  </div>
+
+  <div class="view" id="view-suivi" hidden>
+    <div class="view" id="suivi"></div>
+  </div>
+
+  <div class="view" id="view-recap" hidden>
+    <div class="view" id="recap"></div>
+  </div>
+
+  <div class="view" id="view-reglages" hidden>
+    <div class="view" id="reglages"></div>
+  </div>
+</div>
+
+<div class="savebar" id="savebar">
+  <div class="inner">
+    <button type="button" id="save">Enregistrer la journée</button>
+    <p class="status" id="status" aria-live="polite"></p>
+  </div>
+</div>
+</div>
+
+</body>
+</html>
