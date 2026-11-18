@@ -2,7 +2,7 @@
 // Il ne voit ni ne stocke aucune donnée du carnet (elles restent chiffrées dans le stockage local).
 // À chaque modification des fichiers, augmenter VERSION pour que les téléphones récupèrent la mise à jour.
 
-const VERSION = "carnet-v1.0.0";
+const VERSION = "carnet-v1.1.0";
 const FILES = [
   "./",
   "index.html",

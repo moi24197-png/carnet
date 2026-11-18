@@ -7,7 +7,7 @@ import {
 } from "./crypto.js";
 import { DEFAULT_SETTINGS, SLEEP_EXTRA } from "./defaults.js";
 
-const APP_VERSION = "1.0.0";
+const APP_VERSION = "1.1.0";
 const STORE_KEY = "carnet-coffre";
 const MIN_PASS = 12;
 const LOCK_AFTER_MS = 3 * 60 * 1000;
@@ -199,11 +199,16 @@ function buildChecks(entryChecks) {
   (vault ? vault.settings.checks : []).forEach((c, i) => {
     const prev = (entryChecks || {})[c.id] || {};
     const follow = h("div", { class: "follow" });
+    // Avec « Non », la question devient celle d'une prise préventive (traitement pris sans que le symptôme soit apparu).
     const ttt = c.askTreatment ? chipInput("check-" + i + "-ttt", ["Oui", "Pas encore"], { initial: [prev.ttt] }) : null;
-    if (ttt) follow.append(h("span", { text: "Traitement pris ?" }), ttt.el);
-    follow.hidden = !(prev.on && ttt);
-    const yn = chipInput("check-" + i, ["Non", "Oui"], { initial: [prev.on === true ? "Oui" : prev.on === false ? "Non" : null],
-      onChange: (v) => { follow.hidden = !(v === "Oui" && ttt); } });
+    const question = h("span");
+    const showFollow = (v) => {
+      follow.hidden = !(v && ttt);
+      question.textContent = v === "Non" ? "Traitement préventif pris ?" : "Traitement pris ?";
+    };
+    if (ttt) follow.append(question, ttt.el);
+    const yn = chipInput("check-" + i, ["Non", "Oui"], { initial: [prev.on === true ? "Oui" : prev.on === false ? "Non" : null], onChange: showFollow });
+    showFollow(prev.on === true ? "Oui" : prev.on === false ? "Non" : null);
     checkInputs.push({ id: c.id, yn, ttt });
     root.append(h("section", { "aria-label": c.label }, h("h2", { text: c.label }), yn.el, follow));
   });
@@ -212,7 +217,7 @@ function readChecks() {
   const out = {};
   checkInputs.forEach((c) => {
     const v = c.yn.get();
-    if (v) out[c.id] = { on: v === "Oui", ttt: v === "Oui" && c.ttt ? c.ttt.get() : null };
+    if (v) out[c.id] = { on: v === "Oui", ttt: c.ttt ? c.ttt.get() : null };
   });
   return out;
 }
@@ -490,9 +495,15 @@ function renderTreatments() {
 /* ---------- Suivi : courbe, traitements et blessures sur le même axe de temps ---------- */
 const PERIODS = [["30 jours", 30], ["90 jours", 90], ["1 an", 365]];
 const checkLabel = (id) => (vault.settings.checks.find((c) => c.id === id) || {}).label;
+const isPreventive = (c) => Boolean(c && !c.on && c.ttt === "Oui");
 function checksText(e) {
-  return Object.keys(e.checks || {}).filter((id) => e.checks[id].on && checkLabel(id))
-    .map((id) => checkLabel(id) + (e.checks[id].ttt ? " (traitement : " + e.checks[id].ttt.toLowerCase() + ")" : ""));
+  const out = [];
+  Object.keys(e.checks || {}).filter((id) => checkLabel(id)).forEach((id) => {
+    const c = e.checks[id];
+    if (c.on) out.push(checkLabel(id) + (c.ttt ? " (traitement : " + c.ttt.toLowerCase() + ")" : ""));
+    else if (isPreventive(c)) out.push(checkLabel(id) + " : non, traitement préventif pris");
+  });
+  return out;
 }
 function dayDetail(k) {
   const e = vault.entries[k], rows = [h("p", { class: "big", text: keyDate(k).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" }) })];
@@ -545,8 +556,9 @@ function renderSuivi() {
   const x = (i) => L + (N === 1 ? 0 : i * PW / (N - 1)), y = (v) => T + (10 - v) * PH / 9;
   const lanes = [];
   vault.settings.checks.forEach((c) => {
-    const on = days.filter((k) => ((vault.entries[k] || {}).checks || {})[c.id] && vault.entries[k].checks[c.id].on);
-    if (on.length) lanes.push({ label: clip(c.label, 40), kind: "marks", days: on });
+    const state = (k) => ((vault.entries[k] || {}).checks || {})[c.id];
+    const on = days.filter((k) => state(k) && state(k).on), prev = days.filter((k) => isPreventive(state(k)));
+    if (on.length || prev.length) lanes.push({ label: clip(c.label, 40), kind: "marks", days: on, prev });
   });
   vault.treatments.filter((t) => t.start <= TODAY && (!t.end || t.end >= start)).forEach((t) => lanes.push({ label: "Traitement · " + clip(t.name, 34), kind: "trt",
     a: t.start < start ? start : t.start, b: t.end || TODAY, dots: t.takes.filter((k) => k >= start && k <= TODAY) }));
@@ -577,6 +589,7 @@ function renderSuivi() {
     if (ln.kind === "marks") {
       const w = Math.max(3, PW / N - 1);
       ln.days.forEach((k) => svg.append(sv("rect", { x: x(idx(k)) - w / 2, y: by, width: w, height: 8, rx: 2, fill: "var(--c-high)" })));
+      ln.prev.forEach((k) => svg.append(sv("circle", { cx: x(idx(k)), cy: by + 4, r: 3.5, fill: "var(--surface)", stroke: "var(--accent)", "stroke-width": 2 })));
     } else {
       const x1 = x(idx(ln.a)), x2 = x(idx(ln.b > TODAY ? TODAY : ln.b)), color = ln.kind === "trt" ? "var(--accent)" : "var(--c-inj)";
       svg.append(sv("rect", { x: x1 - 4, y: by, width: Math.max(8, x2 - x1 + 8), height: 8, rx: 4, fill: color, "fill-opacity": 0.3 }));
@@ -602,7 +615,9 @@ function renderSuivi() {
   svg.addEventListener("pointermove", (ev) => { if (ev.pointerType === "mouse" || ev.buttons) pick(ev); });
   select(ui.selDay);
 
-  const legend = (lanes.length ? "Bandes : durée d'un traitement ou d'une blessure, points : jours de prise ou de suivi. " : "") + "Touche le graphique pour voir un jour.";
+  const hasPrev = lanes.some((ln) => ln.prev && ln.prev.length);
+  const legend = (lanes.length ? "Bandes : durée d'un traitement ou d'une blessure, points : jours de prise ou de suivi. " : "")
+    + (hasPrev ? "Rectangle rouge : symptôme noté. Cercle vide : traitement préventif pris sans symptôme. " : "") + "Touche le graphique pour voir un jour.";
   root.append(h("h2", null, vault.settings.name, h("small", { text: "10 = le pire" })), h("p", { class: "summary", text: summary }),
     h("div", { class: "chart-card" }, svg), severityKeys(), h("p", { class: "meta", text: legend }), detail);
 
@@ -659,10 +674,13 @@ function mainSection(start, N, W, detailed) {
   }).join(", ")));
   vault.settings.checks.forEach((c) => {
     const on = pts.filter((p) => (p.e.checks || {})[c.id] && p.e.checks[c.id].on);
-    if (!on.length) return;
-    const ttt = c.askTreatment ? ", traitement pris " + on.filter((p) => p.e.checks[c.id].ttt === "Oui").length + " fois" : "";
-    out.push(h("p", null, h("strong", { text: c.label + " : " }), plural(on.length, "jour noté", "jours notés") + ttt +
-      (on.length <= 8 ? " (" + on.map((p) => fmtDate(p.k)).join(", ") + ")" : "") + "."));
+    const prev = pts.filter((p) => isPreventive((p.e.checks || {})[c.id]));
+    if (!on.length && !prev.length) return;
+    const dates = (list) => list.length <= 8 ? " (" + list.map((p) => fmtDate(p.k)).join(", ") + ")" : "";
+    const parts = [on.length ? plural(on.length, "jour avec symptôme", "jours avec symptôme") + dates(on) : "aucun jour avec symptôme"];
+    if (c.askTreatment && on.length) parts.push("traitement pris pendant le symptôme " + on.filter((p) => p.e.checks[c.id].ttt === "Oui").length + " fois");
+    if (prev.length) parts.push("traitement préventif pris sans symptôme " + plural(prev.length, "fois", "fois") + dates(prev));
+    out.push(h("p", null, h("strong", { text: c.label + " : " }), parts.join(", ") + "."));
   });
   const notes = pts.filter((p) => p.e.note).reverse().slice(0, detailed ? 12 : 4);
   if (notes.length) out.push(h("p", null, h("strong", { text: "Commentaires du patient" })), h("ul", null, notes.map((p) => h("li", { text: fmtDate(p.k) + " : " + p.e.note }))));
